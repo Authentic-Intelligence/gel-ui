@@ -37,9 +37,13 @@ function App() {
   );
 }
 
+// Injected at build time by Vite
+declare const __GEL_UI_BASE_PATH__: string;
+const basePath = __GEL_UI_BASE_PATH__.replace(/^\/|\/$/g, ""); // Remove leading/trailing slashes for basename
+
 const AppMain = observer(function _AppMain() {
   return (
-    <BrowserRouter basename="ui">
+    <BrowserRouter basename={basePath}>
       <div className={`${styles.theme} ${themeStyles.theme}`}>
         <ModalProvider>
           <div className={styles.app}>

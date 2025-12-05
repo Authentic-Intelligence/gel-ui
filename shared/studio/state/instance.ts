@@ -116,33 +116,62 @@ export class InstanceState extends Model({
   }
 
   async fetchInstanceInfo() {
-    const data = (await this._sysConnFetch<{
+    // First try to fetch basic info without role-related globals (for older Gel versions)
+    let data: {
       instanceName: string;
       version: ServerVersion;
       databases: DatabaseInfo[];
-      currentRole: string;
-      isSuperuser: boolean;
-      permissions: string[];
-    }>(
-      `
-      select {
-        instanceName := sys::get_instance_name(),
-        version := sys::get_version(),
-        databases := ${this.databasesQuery},
-        currentRole := global sys::current_role,
-        isSuperuser := global sys::perm::superuser,
-        permissions := global sys::current_permissions,
-      }`,
-      true
-    ))!;
+      currentRole?: string;
+      isSuperuser?: boolean;
+      permissions?: string[];
+    };
+
+    try {
+      // Try the full query with role info (Gel 6.x+)
+      data = (await this._sysConnFetch<{
+        instanceName: string;
+        version: ServerVersion;
+        databases: DatabaseInfo[];
+        currentRole: string;
+        isSuperuser: boolean;
+        permissions: string[];
+      }>(
+        `
+        select {
+          instanceName := sys::get_instance_name(),
+          version := sys::get_version(),
+          databases := ${this.databasesQuery},
+          currentRole := global sys::current_role,
+          isSuperuser := global sys::perm::superuser,
+          permissions := global sys::current_permissions,
+        }`,
+        true
+      ))!;
+    } catch (e) {
+      // Fallback for older versions without role globals
+      console.warn("Role globals not available, using fallback query:", e);
+      data = (await this._sysConnFetch<{
+        instanceName: string;
+        version: ServerVersion;
+        databases: DatabaseInfo[];
+      }>(
+        `
+        select {
+          instanceName := sys::get_instance_name(),
+          version := sys::get_version(),
+          databases := ${this.databasesQuery},
+        }`,
+        true
+      ))!;
+    }
 
     runInAction(() => {
       this.instanceName = data.instanceName ?? "_localdev";
       this.serverVersion = data.version;
       this.databases = data.databases;
-      this.currentRole = data.currentRole;
-      this.isSuperuser = data.isSuperuser;
-      this.permissions = data.permissions;
+      this.currentRole = data.currentRole ?? "unknown";
+      this.isSuperuser = data.isSuperuser ?? true; // Assume superuser for older versions
+      this.permissions = data.permissions ?? [];
     });
 
     cleanupOldSchemaDataForInstance(this.instanceId!, this.databaseNames!);
